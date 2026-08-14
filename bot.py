@@ -42,6 +42,7 @@ TZ = ZoneInfo(TIMEZONE)
 # ----- Intents et initialisation du bot -----
 intents = discord.Intents.default()
 intents.guilds = True
+intents.members = True
 intents.messages = True
 intents.message_content = True
 intents.voice_states = True
@@ -189,12 +190,25 @@ def mark_announced(guild_id, week):
 
 async def name_for(guild, user_id):
     # Renvoie un nom lisible pour un user_id dans une guild (préférer le display_name si présent)
+    # 1) Si le membre est en cache, utiliser son `display_name` (nickname sur la guild)
     member = guild.get_member(user_id)
     if member:
         return member.display_name
+
+    # 2) Sinon, tenter de récupérer le membre via l'API (fetch_member)
+    try:
+        member = await guild.fetch_member(user_id)
+        return member.display_name
+    except discord.NotFound:
+        pass
+    except discord.HTTPException:
+        pass
+
+    # 3) En dernier recours, récupérer l'objet User global (pas de nickname de guild)
     try:
         user = await bot.fetch_user(user_id)
-        return user.display_name
+        # `User` n'a pas forcément `display_name` différent de `name`
+        return getattr(user, "display_name", user.name)
     except discord.HTTPException:
         return f"Utilisateur {user_id}"
 
@@ -309,9 +323,11 @@ async def before_weekly_loop():
 @bot.tree.command(name="classement", description="Affiche le classement de la semaine.")
 @app_commands.guild_only()
 async def classement(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        embed=await leaderboard_embed(interaction.guild, current_week(), "🏆 Classement actuel")
-    )
+    # Defer la réponse pour éviter l'erreur "Unknown interaction" si la construction
+    # de l'embed prend du temps (fetch des membres, DB, etc.).
+    await interaction.response.defer()
+    embed = await leaderboard_embed(interaction.guild, current_week(), "🏆 Classement actuel")
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="points", description="Affiche tes points ou ceux d'un membre.")
@@ -320,9 +336,10 @@ async def classement(interaction: discord.Interaction):
 async def points(interaction: discord.Interaction, membre: Optional[discord.Member] = None):
     # Affiche les points (texte + vocal) pour un membre (ou l'utilisateur appelant)
     target = membre or interaction.user
+    await interaction.response.defer()
     row = get_score(interaction.guild.id, target.id)
     if not row:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"**{target.display_name}** n'a encore aucun point cette semaine.", ephemeral=True
         )
         return
@@ -332,12 +349,13 @@ async def points(interaction: discord.Interaction, membre: Optional[discord.Memb
     embed.add_field(name="Total", value=f"**{total} pts**", inline=False)
     embed.add_field(name="🎙️ Vocal", value=f"{row['voice_points']} pts\n{row['voice_minutes']} min", inline=True)
     embed.add_field(name="💬 Écrit", value=f"{row['text_points']} pts\n{row['text_messages']} messages", inline=True)
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="top_vocal", description="Affiche le top vocal de la semaine.")
 @app_commands.guild_only()
 async def top_vocal(interaction: discord.Interaction):
+    await interaction.response.defer()
     with connect_db() as conn:
         rows = conn.execute("""
         SELECT user_id, voice_points, voice_minutes FROM weekly_scores
@@ -349,7 +367,7 @@ async def top_vocal(interaction: discord.Interaction):
     for i, row in enumerate(rows, 1):
         name = discord.utils.escape_markdown(await name_for(interaction.guild, row["user_id"]))
         lines.append(f"**{i}. {name}** — {row['voice_points']} pts ({row['voice_minutes']} min)")
-    await interaction.response.send_message(
+    await interaction.followup.send(
         embed=discord.Embed(title="🎙️ Top vocal", description="\n".join(lines) or "Aucun point.", colour=discord.Colour.orange())
     )
 
@@ -357,6 +375,7 @@ async def top_vocal(interaction: discord.Interaction):
 @bot.tree.command(name="top_messages", description="Affiche le top messages de la semaine.")
 @app_commands.guild_only()
 async def top_messages(interaction: discord.Interaction):
+    await interaction.response.defer()
     with connect_db() as conn:
         rows = conn.execute("""
         SELECT user_id, text_points, text_messages FROM weekly_scores
@@ -368,7 +387,7 @@ async def top_messages(interaction: discord.Interaction):
     for i, row in enumerate(rows, 1):
         name = discord.utils.escape_markdown(await name_for(interaction.guild, row["user_id"]))
         lines.append(f"**{i}. {name}** — {row['text_points']} pts ({row['text_messages']} messages)")
-    await interaction.response.send_message(
+    await interaction.followup.send(
         embed=discord.Embed(title="💬 Top messages", description="\n".join(lines) or "Aucun point.", colour=discord.Colour.teal())
     )
 
