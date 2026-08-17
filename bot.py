@@ -24,8 +24,8 @@ RANKING_CHANNEL_ID = int(os.getenv("RANKING_CHANNEL_ID", "0") or 0)
 
 # ----- Paramètres de comptage pour le vocal -----
 # La boucle vocale tourne toutes les minutes et applique les règles :
-# - si seul dans le canal : 1 point toutes les 5 minutes
-# - si >=2 personnes : 1 point par minute
+# - si >=2 personnes : 1 point toutes les 5 minutes
+# - si seul dans le canal : 1 point toutes les 10 minutes
 
 # ----- Paramètres pour les messages texte -----
 MESSAGE_POINTS = max(0, int(os.getenv("MESSAGE_POINTS", "1")))
@@ -118,8 +118,8 @@ def _update_voice_tick(guild_id: int, user_id: int, human_count: int):
     """Mise à jour atomique des minutes/points vocaux pour une personne sur un tick d'une minute.
 
     Règles :
-    - Si `human_count` >= 2 : +1 minute et +1 point (1 point par minute).
-    - Si `human_count` == 1 : +1 minute et +1 point toutes les 5 minutes.
+    - Si `human_count` >= 2 : +1 minute et +1 point toutes les 5 minutes.
+    - Si `human_count` == 1 : +1 minute et +1 point toutes les 10 minutes.
     """
     week = current_week()
     with connect_db() as conn:
@@ -135,11 +135,12 @@ def _update_voice_tick(guild_id: int, user_id: int, human_count: int):
         new_points = old_points
 
         if human_count >= 2:
-            # 1 point par minute
-            new_points += 1
-        else:
-            # Seul dans le canal: 1 point toutes les 5 minutes
+            # Plusieurs personnes: 1 point toutes les 5 minutes
             if new_minutes % 5 == 0:
+                new_points += 1
+        else:
+            # Seul dans le canal: 1 point toutes les 10 minutes
+            if new_minutes % 10 == 0:
                 new_points += 1
 
         # Upsert avec les totaux calculés
@@ -215,7 +216,7 @@ async def name_for(guild, user_id):
 
 async def leaderboard_embed(guild, week, title):
     # Construit un embed Discord listant le top pour la semaine donnée
-    rows = get_top(guild.id, week)
+    rows = get_top(guild.id, week, limit=50)
     embed = discord.Embed(title=title, description=f"Semaine **{week}**", colour=discord.Colour.blurple())
     if not rows:
         embed.add_field(name="Classement", value="Aucun point enregistré.", inline=False)
@@ -230,7 +231,7 @@ async def leaderboard_embed(guild, week, title):
             f"{prefix} **{name}** — **{row['total_points']} pts** "
             f"(🎙️ {row['voice_points']} · 💬 {row['text_points']})"
         )
-    embed.add_field(name="Top 10", value="\n".join(lines), inline=False)
+    embed.add_field(name="Top 50", value="\n".join(lines), inline=False)
     return embed
 
 

@@ -2,15 +2,16 @@
 
 ## Ce qu'il fait
 - Points vocaux :
-  - Si au moins 2 personnes dans le même canal vocal/stage : **+1 point par minute**.
-  - Si une seule personne dans le canal : **+1 point toutes les 5 minutes** (les minutes sont comptées).
+ - Points vocaux :
+  - Si au moins 2 personnes dans le même canal vocal/stage : **+1 point toutes les 5 minutes** (les minutes sont comptées).
+  - Si une seule personne dans le canal : **+1 point toutes les 10 minutes** (les minutes sont comptées).
   - Le salon AFK est ignoré.
 - Points texte : **1 point** par message admissible (par défaut), avec cooldown par utilisateur.
 - Classement hebdomadaire stocké dans une base SQLite (`activity.db` par défaut).
 - Publication automatique du classement de la semaine précédente si `RANKING_CHANNEL_ID` est renseigné.
 
 ## Commandes
-- `/classement` — affiche le classement de la semaine en cours.
+- `/classement` — affiche le classement de la semaine en cours (top 50).
 - `/points [membre]` — affiche les points d'un membre (ou les tiens si non précisé).
 - `/top_vocal` — top vocal de la semaine.
 - `/top_messages` — top messages de la semaine.
@@ -79,8 +80,8 @@ Les paramètres texte sont lus depuis l'environnement :
 - `MESSAGE_MIN_CHARS` (par défaut `5`)
 
 Les règles vocales sont actuellement codées dans `bot.py` :
-- 1 point par minute si >=2 personnes
-- 1 point toutes les 5 minutes si seul
+- 1 point toutes les 5 minutes si >=2 personnes
+- 1 point toutes les 10 minutes si seul
 
 ## Exclure des salons
 
