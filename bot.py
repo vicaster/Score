@@ -204,7 +204,7 @@ def get_score(guild_id, user_id, week=None):
         """, (guild_id, week or current_week(), user_id)).fetchone()
 
 
-def get_top(guild_id, week=None, limit=10):
+def get_top(guild_id, week=None, limit=50):
     with connect_db() as conn:
         return conn.execute("""
         SELECT user_id, text_points, voice_points, text_messages, voice_minutes,
@@ -404,7 +404,7 @@ async def top_vocal(interaction: discord.Interaction):
         rows = conn.execute("""
         SELECT user_id, voice_points, voice_minutes FROM weekly_scores
         WHERE guild_id=? AND week_key=?
-        ORDER BY voice_points DESC, voice_minutes DESC LIMIT 10
+        ORDER BY voice_points DESC, voice_minutes DESC LIMIT 50
         """, (interaction.guild.id, current_week())).fetchall()
 
     lines = []
@@ -424,7 +424,7 @@ async def top_messages(interaction: discord.Interaction):
         rows = conn.execute("""
         SELECT user_id, text_points, text_messages FROM weekly_scores
         WHERE guild_id=? AND week_key=?
-        ORDER BY text_points DESC, text_messages DESC LIMIT 10
+        ORDER BY text_points DESC, text_messages DESC LIMIT 50
         """, (interaction.guild.id, current_week())).fetchall()
 
     lines = []
