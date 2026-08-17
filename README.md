@@ -2,7 +2,6 @@
 
 ## Ce qu'il fait
 - Points vocaux :
- - Points vocaux :
   - Si au moins 2 personnes dans le même canal vocal/stage : **+1 point toutes les 5 minutes** (les minutes sont comptées).
   - Si une seule personne dans le canal : **+1 point toutes les 10 minutes** (les minutes sont comptées).
   - Le salon AFK est ignoré.
@@ -16,6 +15,7 @@
 - `/top_vocal` — top vocal de la semaine.
 - `/top_messages` — top messages de la semaine.
 - `/admin_reset` — remet les scores de la semaine à zéro (administrateur requis).
+ - `/purge [days=30] [limit=50]` — (admin) liste les membres inactifs depuis au moins `days` jours (max `limit` résultats).
 
 ## Installation (macOS)
 
@@ -82,6 +82,14 @@ Les paramètres texte sont lus depuis l'environnement :
 Les règles vocales sont actuellement codées dans `bot.py` :
 - 1 point toutes les 5 minutes si >=2 personnes
 - 1 point toutes les 10 minutes si seul
+
+## Nouvelle fonctionnalité — suivi d'inactivité
+
+- Le bot enregistre la `last_activity` des membres (message ou présence vocale) dans la base SQLite `user_activity`.
+- Commande `/purge` (admin) : liste les membres inactifs depuis au moins `days` jours (par défaut 30), jusqu'à `limit` entrées (par défaut 50).
+- Remarques :
+  - Les timestamps d'activité commencent à être enregistrés après le redémarrage du bot contenant ces modifications ; l'historique antérieur n'est pas rétro‑enregistré automatiquement.
+  - Pour des tests rapides, on peut modifier la table `user_activity` via `sqlite3` pour simuler des dates anciennes.
 
 ## Exclure des salons
 
