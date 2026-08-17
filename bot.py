@@ -84,6 +84,12 @@ def init_db():
             announced_at TEXT NOT NULL,
             PRIMARY KEY (guild_id, week_key)
         );
+        CREATE TABLE IF NOT EXISTS user_activity (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            last_activity TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        );
         """)
 
 
@@ -108,6 +114,8 @@ def add_text(guild_id, user_id):
           text_points = text_points + excluded.text_points,
           text_messages = text_messages + 1
         """, (guild_id, current_week(), user_id, MESSAGE_POINTS))
+    # Enregistrer l'activité utilisateur (message)
+    record_activity(guild_id, user_id)
 
 
 # NB: la fonction `add_voice` originale a été remplacée par `_update_voice_tick`
@@ -122,6 +130,8 @@ def _update_voice_tick(guild_id: int, user_id: int, human_count: int):
     - Si `human_count` == 1 : +1 minute et +1 point toutes les 10 minutes.
     """
     week = current_week()
+    # Enregistrer l'activité utilisateur (présence vocale)
+    record_activity(guild_id, user_id)
     with connect_db() as conn:
         row = conn.execute(
             "SELECT voice_minutes, voice_points FROM weekly_scores WHERE guild_id=? AND week_key=? AND user_id=?",
@@ -151,6 +161,39 @@ def _update_voice_tick(guild_id: int, user_id: int, human_count: int):
           voice_points = ?,
           voice_minutes = ?
         """, (guild_id, week, user_id, new_points, new_minutes, new_points, new_minutes))
+
+
+def record_activity(guild_id: int, user_id: int, when: datetime | None = None):
+    """Enregistre le timestamp de la dernière activité d'un utilisateur dans une guild.
+
+    `when` est en timezone `TZ` si fourni, sinon now(TZ).
+    """
+    when = when or datetime.now(TZ)
+    with connect_db() as conn:
+        conn.execute("""
+        INSERT INTO user_activity(guild_id, user_id, last_activity)
+        VALUES (?, ?, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+          last_activity = excluded.last_activity
+        """, (guild_id, user_id, when.isoformat()))
+
+
+def get_inactive_top(guild_id: int, days: Optional[int] = None, limit: int = 50):
+    """Retourne les utilisateurs les plus inactifs (ordre ascendant par `last_activity`).
+
+    Si `days` est renseigné, ne renvoie que ceux inactifs depuis au moins `days` jours.
+    """
+    with connect_db() as conn:
+        if days is None:
+            return conn.execute(
+                "SELECT user_id, last_activity FROM user_activity WHERE guild_id=? ORDER BY last_activity ASC LIMIT ?",
+                (guild_id, limit)
+            ).fetchall()
+        cutoff = (datetime.now(TZ) - timedelta(days=days)).isoformat()
+        return conn.execute(
+            "SELECT user_id, last_activity FROM user_activity WHERE guild_id=? AND last_activity<=? ORDER BY last_activity ASC LIMIT ?",
+            (guild_id, cutoff, limit)
+        ).fetchall()
 
 
 def get_score(guild_id, user_id, week=None):
@@ -403,6 +446,33 @@ async def admin_reset(interaction: discord.Interaction):
             (interaction.guild.id, current_week())
         )
     await interaction.response.send_message("Scores de la semaine remis à zéro.", ephemeral=True)
+
+
+@bot.tree.command(name="purge", description="Liste les membres inactifs depuis X jours (admin).")
+@app_commands.describe(days="Nombre de jours d'inactivité minimum", limit="Nombre maximum d'entrées à afficher")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.guild_only()
+async def purge(interaction: discord.Interaction, days: Optional[int] = 30, limit: Optional[int] = 50):
+    await interaction.response.defer()
+    rows = get_inactive_top(interaction.guild.id, days=days, limit=limit)
+    if not rows:
+        await interaction.followup.send(f"Aucun membre inactif depuis {days} jours.", ephemeral=True)
+        return
+
+    lines = []
+    for i, row in enumerate(rows, 1):
+        uid = row["user_id"] if isinstance(row, dict) or hasattr(row, 'keys') else row[0]
+        last = row["last_activity"] if isinstance(row, dict) or hasattr(row, 'keys') else row[1]
+        try:
+            dt = datetime.fromisoformat(last)
+            last_str = dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            last_str = str(last)
+        name = discord.utils.escape_markdown(await name_for(interaction.guild, uid))
+        lines.append(f"**{i}. {name}** — dernier actif : {last_str}")
+
+    embed = discord.Embed(title=f"🧹 Inactifs (>={days}j)", description="\n".join(lines), colour=discord.Colour.dark_grey())
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.event
