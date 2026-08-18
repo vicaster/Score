@@ -15,6 +15,9 @@
 - `/top_vocal` — top vocal de la semaine.
 - `/top_messages` — top messages de la semaine.
 - `/admin_reset` — remet les scores de la semaine à zéro (administrateur requis).
+ - `/top_vocal` — top vocal de la semaine (top 10).
+ - `/top_messages` — top messages de la semaine (top 10).
+ - `/admin_reset` — remet les scores de la semaine à zéro (administrateur requis).
  - `/purge [days=30] [limit=50]` — (admin) liste les membres inactifs depuis au moins `days` jours (max `limit` résultats).
 
 ## Installation (macOS)
@@ -90,6 +93,17 @@ Les règles vocales sont actuellement codées dans `bot.py` :
 - Remarques :
   - Les timestamps d'activité commencent à être enregistrés après le redémarrage du bot contenant ces modifications ; l'historique antérieur n'est pas rétro‑enregistré automatiquement.
   - Pour des tests rapides, on peut modifier la table `user_activity` via `sqlite3` pour simuler des dates anciennes.
+ - Le bot enregistre la `last_activity` des membres (message ou présence vocale) dans la base SQLite `user_activity`.
+ - `last_activity` est mise à jour :
+   - lors d'un message admissible (fonction `add_text()`),
+   - à chaque tick vocal (fonction `_update_voice_tick()`).
+ - La commande `/purge` :
+   - exclut les bots,
+   - inclut les membres sans activité enregistrée seulement si leur `joined_at` est antérieur au cutoff (pour ne pas lister les nouveaux arrivants),
+   - liste en priorité les "jamais actifs" puis les membres triés par date d'activité (ascendant).
+ - Remarques :
+   - Les timestamps d'activité commencent à être enregistrés après le redémarrage du bot contenant ces modifications ; l'historique antérieur n'est pas rétro‑enregistré automatiquement.
+   - Pour des tests rapides, on peut modifier la table `user_activity` via `sqlite3` pour simuler des dates anciennes.
 
 ## Exclure des salons
 

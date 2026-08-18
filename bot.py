@@ -453,22 +453,69 @@ async def admin_reset(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.guild_only()
 async def purge(interaction: discord.Interaction, days: Optional[int] = 30, limit: Optional[int] = 50):
+    """Liste les membres qui n'ont pas envoyé de message et n'ont pas rejoint de vocal depuis `days` jours.
+
+    Comportement :
+    - récupère tous les membres de la guild (exclut les bots)
+    - pour chaque membre, regarde la table `user_activity` pour déterminer la dernière activité
+    - si aucune activité enregistrée, n'inclut le membre que si `joined_at` <= cutoff (pour éviter de lister les nouveaux arrivants)
+    - affiche jusqu'à `limit` résultats triés du plus ancien au plus récent (les "jamais actifs" apparaissent en tête)
+    """
     await interaction.response.defer()
-    rows = get_inactive_top(interaction.guild.id, days=days, limit=limit)
-    if not rows:
+
+    cutoff = datetime.now(TZ) - timedelta(days=days)
+
+    # Charger les activités connues depuis la BDD
+    with connect_db() as conn:
+        rows = conn.execute(
+            "SELECT user_id, last_activity FROM user_activity WHERE guild_id=?",
+            (interaction.guild.id,)
+        ).fetchall()
+    known = {r['user_id']: r['last_activity'] for r in rows}
+
+    members = []
+    try:
+        # Récupérer tous les membres via l'API pour être sûr d'avoir les newcomers
+        members = [m async for m in interaction.guild.fetch_members(limit=None)]
+    except Exception:
+        # Fallback sur la cache si fetch_members échoue
+        members = list(interaction.guild.members)
+
+    candidates = []
+    for m in members:
+        if m.bot:
+            continue
+        last_iso = known.get(m.id)
+        if last_iso:
+            try:
+                last_dt = datetime.fromisoformat(last_iso)
+            except Exception:
+                # en cas de format inattendu, ignorer
+                continue
+            if last_dt <= cutoff:
+                candidates.append((m, last_dt))
+        else:
+            # Pas d'activité enregistrée : n'inclure que si le membre a rejoint il y a >= days
+            if m.joined_at and m.joined_at.replace(tzinfo=TZ) <= cutoff:
+                candidates.append((m, None))
+
+    if not candidates:
         await interaction.followup.send(f"Aucun membre inactif depuis {days} jours.", ephemeral=True)
         return
 
+    # Trier : None (jamais actifs) en premier, puis par date ascendante
+    def sort_key(item):
+        m, last = item
+        return (0 if last is None else 1, last or datetime.min.replace(tzinfo=TZ))
+
+    candidates.sort(key=sort_key)
     lines = []
-    for i, row in enumerate(rows, 1):
-        uid = row["user_id"] if isinstance(row, dict) or hasattr(row, 'keys') else row[0]
-        last = row["last_activity"] if isinstance(row, dict) or hasattr(row, 'keys') else row[1]
-        try:
-            dt = datetime.fromisoformat(last)
-            last_str = dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            last_str = str(last)
-        name = discord.utils.escape_markdown(await name_for(interaction.guild, uid))
+    for i, (member, last) in enumerate(candidates[:limit], 1):
+        name = discord.utils.escape_markdown(member.display_name or member.name)
+        if last is None:
+            last_str = "Jamais enregistré"
+        else:
+            last_str = last.astimezone(TZ).strftime("%Y-%m-%d %H:%M")
         lines.append(f"**{i}. {name}** — dernier actif : {last_str}")
 
     embed = discord.Embed(title=f"🧹 Inactifs (>={days}j)", description="\n".join(lines), colour=discord.Colour.dark_grey())
