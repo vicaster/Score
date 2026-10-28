@@ -1,6 +1,11 @@
 # Bot Discord — classement d'activité
 
 ## Ce qu'il fait
+- Publication quotidienne du cumul mensuel dans le salon `RANKING_CHANNEL_ID`,
+  au premier passage de la boucle après minuit heure de Paris. Le 1er du mois,
+  le classement publié est celui du mois précédent, clôturé la veille.
+- La commande `/classement` reste en direct et la publication mensuelle existante
+  reste active. Un jour déjà annoncé n'est pas republié après redémarrage.
 - Points vocaux :
   - Si au moins 2 personnes dans le même canal vocal/stage : **+1 point toutes les 5 minutes** (les minutes sont comptées).
   - Si une seule personne dans le canal : **+1 point toutes les 10 minutes** (les minutes sont comptées).

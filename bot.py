@@ -8,6 +8,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+from daily_ranking import (
+    claim_daily_publication,
+    daily_publication_context,
+    release_daily_publication,
+)
 
 load_dotenv()
 
@@ -79,6 +84,12 @@ def init_db():
             user_id INTEGER NOT NULL,
             last_activity TEXT NOT NULL,
             PRIMARY KEY (guild_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS announced_days (
+            guild_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            announced_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, day_key)
         );
         """)
 
@@ -346,6 +357,42 @@ async def before_monthly_loop():
     await bot.wait_until_ready()
 
 
+@tasks.loop(minutes=1)
+async def daily_loop():
+    """Publie le cumul du mois à la clôture de chaque journée parisienne."""
+    if not RANKING_CHANNEL_ID:
+        return
+    context = daily_publication_context(datetime.now(TZ), TIMEZONE)
+    if context is None:
+        return
+    day, month = context
+    for guild in bot.guilds:
+        if GUILD_ID and guild.id != GUILD_ID:
+            continue
+        channel = guild.get_channel(RANKING_CHANNEL_ID)
+        if not isinstance(channel, discord.TextChannel) or not get_top(guild.id, month):
+            continue
+        # La réservation en SQLite évite deux publications quand deux processus
+        # Score tournent par erreur sur le même VPS.
+        with connect_db() as conn:
+            if not claim_daily_publication(conn, guild.id, day):
+                continue
+        try:
+            embed = await leaderboard_embed(
+                guild, month, f"🏆 Classement au {day} (fin de journée)"
+            )
+            await channel.send(embed=embed)
+        except Exception:
+            with connect_db() as conn:
+                release_daily_publication(conn, guild.id, day)
+            raise
+
+
+@daily_loop.before_loop
+async def before_daily_loop():
+    await bot.wait_until_ready()
+
+
 @bot.tree.command(name="classement", description="Affiche le classement du mois en cours.")
 @app_commands.guild_only()
 async def classement(interaction: discord.Interaction):
@@ -543,6 +590,7 @@ async def setup_hook():
 
     voice_loop.start()
     monthly_loop.start()
+    daily_loop.start()
 
 
 if __name__ == "__main__":
